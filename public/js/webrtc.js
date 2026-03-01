@@ -10,15 +10,22 @@ class WebRTCManager {
         this.peerConnections = new Map(); // viewerId -> RTCPeerConnection
         this.remoteStreams = new Map(); // viewerId -> MediaStream
         
+        // Default ICE servers (国内可访问的 STUN 服务器)
+        this.defaultIceServers = [
+            { urls: 'stun:stun.miwifi.com:3478' },           // 小米
+            { urls: 'stun:stun.chat.bilibili.com:3478' },   // B站
+            { urls: 'stun:stun.hitv.com:3478' },            // 芒果TV
+            { urls: 'stun:stun.syncthing.net:3478' },      // Syncthing
+            { urls: 'stun:stun.l.google.com:19302' },       // Google (备用)
+            { urls: 'stun:stun1.l.google.com:19302' }       // Google (备用)
+        ];
+        
+        // Custom TURN/STUN servers (set by user)
+        this.customIceServers = null;
+        
         // Configuration for RTCPeerConnection
         this.rtcConfig = {
-            iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' },
-                { urls: 'stun:stun2.l.google.com:19302' },
-                { urls: 'stun:stun3.l.google.com:19302' },
-                { urls: 'stun:stun4.l.google.com:19302' }
-            ],
+            iceServers: this.defaultIceServers,
             iceCandidatePoolSize: 10,
             bundlePolicy: 'max-bundle',
             rtcpMuxPolicy: 'require'
@@ -36,6 +43,49 @@ class WebRTCManager {
         this.onRemoteStream = null;
         this.onConnectionStateChange = null;
         this.onStatsUpdate = null;
+    }
+
+    /**
+     * Set custom TURN/STUN servers
+     * @param {Object} config - { url, username, credential }
+     */
+    setCustomIceServers(config) {
+        if (!config || !config.url) {
+            // Reset to default
+            this.customIceServers = null;
+            this.rtcConfig.iceServers = this.defaultIceServers;
+            console.log('Reset to default STUN servers');
+            return;
+        }
+        
+        const { url, username, credential } = config;
+        
+        // Parse URL to determine server type
+        const iceServer = { urls: url };
+        
+        // Add credentials if provided (required for TURN)
+        if (username) iceServer.username = username;
+        if (credential) iceServer.credential = credential;
+        
+        // Set custom servers (include default STUN as fallback)
+        this.customIceServers = [iceServer];
+        
+        // If it's a TURN server, also include STUN servers for efficiency
+        if (url.toLowerCase().startsWith('turn:')) {
+            this.rtcConfig.iceServers = [...this.defaultIceServers, iceServer];
+            console.log('Configured TURN server with STUN fallback:', url);
+        } else {
+            // If it's a custom STUN, use it alone
+            this.rtcConfig.iceServers = [iceServer];
+            console.log('Configured custom STUN server:', url);
+        }
+    }
+    
+    /**
+     * Get current ICE servers configuration
+     */
+    getIceServers() {
+        return this.rtcConfig.iceServers;
     }
 
     /**
@@ -533,38 +583,68 @@ class WebRTCManager {
                 connection: {}
             };
 
+            let inboundVideoTrackId = null;
+
             stats.forEach(report => {
+                // 出站视频 (主播端)
                 if (report.type === 'outbound-rtp' && report.kind === 'video') {
-                    result.video = {
-                        bytesSent: report.bytesSent,
-                        packetsSent: report.packetsSent,
-                        framesEncoded: report.framesEncoded,
-                        framesSent: report.framesSent,
-                        frameWidth: report.frameWidth,
-                        frameHeight: report.frameHeight,
-                        framesPerSecond: report.framesPerSecond,
-                        bitrate: report.bitrate || 0
-                    };
-                } else if (report.type === 'inbound-rtp' && report.kind === 'video') {
-                    result.video = {
-                        bytesReceived: report.bytesReceived,
-                        packetsReceived: report.packetsReceived,
-                        packetsLost: report.packetsLost,
-                        framesDecoded: report.framesDecoded,
-                        framesReceived: report.framesReceived,
-                        frameWidth: report.frameWidth,
-                        frameHeight: report.frameHeight,
-                        framesPerSecond: report.framesPerSecond,
-                        jitter: report.jitter,
-                        bitrate: report.bitrate || 0
-                    };
-                } else if (report.type === 'candidate-pair' && report.state === 'succeeded') {
-                    result.connection = {
-                        currentRoundTripTime: report.currentRoundTripTime,
-                        availableBitrate: report.availableBitrate
-                    };
+                    result.video.bytesSent = report.bytesSent;
+                    result.video.packetsSent = report.packetsSent;
+                    result.video.framesEncoded = report.framesEncoded;
+                    result.video.framesSent = report.framesSent;
+                }
+                // 入站视频 (观众端)
+                else if (report.type === 'inbound-rtp' && report.kind === 'video') {
+                    result.video.bytesReceived = report.bytesReceived;
+                    result.video.packetsReceived = report.packetsReceived;
+                    result.video.packetsLost = report.packetsLost;
+                    result.video.framesDecoded = report.framesDecoded;
+                    result.video.framesReceived = report.framesReceived;
+                    result.video.jitter = report.jitter;
+                    // 获取关联的 track ID
+                    if (report.trackId) {
+                        inboundVideoTrackId = report.trackId;
+                    }
+                }
+                // 候选对连接信息
+                else if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+                    result.connection.currentRoundTripTime = report.currentRoundTripTime;
+                    result.connection.availableBitrate = report.availableBitrate;
+                }
+                // 本地视频轨道信息 (主播端分辨率/帧率)
+                else if (report.type === 'media-source' && report.kind === 'video') {
+                    result.video.frameWidth = report.width;
+                    result.video.frameHeight = report.height;
+                    result.video.framesPerSecond = report.framesPerSecond;
                 }
             });
+
+            // 观众端：通过 inbound-rtp 的 trackId 找到对应的 track report
+            if (inboundVideoTrackId) {
+                stats.forEach(report => {
+                    if (report.type === 'track' && report.id === inboundVideoTrackId) {
+                        result.video.frameWidth = report.frameWidth;
+                        result.video.frameHeight = report.frameHeight;
+                        // framesPerSecond 可能在不同浏览器中字段名不同
+                        result.video.framesPerSecond = report.framesPerSecond 
+                            || report.frameRate 
+                            || (report.frameWidth ? 60 : undefined);
+                    }
+                });
+            }
+
+            // 备用：如果没有找到 track，尝试从 inbound-rtp 直接获取（某些浏览器支持）
+            if (!result.video.frameWidth) {
+                stats.forEach(report => {
+                    if (report.type === 'inbound-rtp' && report.kind === 'video') {
+                        // 某些浏览器在 inbound-rtp 中直接包含分辨率信息
+                        if (report.frameWidth) {
+                            result.video.frameWidth = report.frameWidth;
+                            result.video.frameHeight = report.frameHeight;
+                        }
+                    }
+                });
+            }
 
             return result;
         } catch (error) {

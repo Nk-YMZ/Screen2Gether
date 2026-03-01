@@ -506,3 +506,54 @@ header h1 {
 .video-container:-webkit-full-screen:hover .video-controls {
     opacity: 1;
 }
+
+/* Host Link Card */
+.host-link-card {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    margin: 60px auto 0;
+    padding: 20px 30px;
+    background: var(--card-bg);
+    border: 2px solid var(--border-color);
+    border-radius: 12px;
+    max-width: 400px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.host-link-card:hover {
+    border-color: var(--primary-color);
+    transform: translateY(-3px);
+    box-shadow: 0 10px 30px rgba(99, 102, 241, 0.2);
+}
+
+.host-link-icon {
+    font-size: 2.5rem;
+}
+
+.host-link-text {
+    flex: 1;
+    text-align: left;
+}
+
+.host-link-text strong {
+    display: block;
+    font-size: 1.1rem;
+    margin-bottom: 4px;
+}
+
+.host-link-text span {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.host-link-arrow {
+    font-size: 1.5rem;
+    color: var(--primary-color);
+    transition: transform 0.3s;
+}
+
+.host-link-card:hover .host-link-arrow {
+    transform: translateX(5px);
+}

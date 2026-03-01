@@ -11,7 +11,6 @@ let webrtc = null;
 let statsInterval = null;
 
 // DOM Elements
-const landingPage = document.getElementById('landing-page');
 const hostPage = document.getElementById('host-page');
 const viewerPage = document.getElementById('viewer-page');
 const roomCodeDisplay = document.getElementById('room-code-display');
@@ -30,6 +29,53 @@ const startShareBtn = document.getElementById('start-share-btn');
 const stopShareBtn = document.getElementById('stop-share-btn');
 const bitrateSlider = document.getElementById('bitrate');
 const bitrateValue = document.getElementById('bitrate-value');
+
+/**
+ * Initialize based on URL path
+ */
+function initApp() {
+    const isHostPage = window.location.pathname === '/host';
+    
+    if (isHostPage) {
+        currentRole = 'host';
+        hostPage.classList.add('active');
+        viewerPage.classList.remove('active');
+        initHost();
+    } else {
+        currentRole = 'viewer';
+        viewerPage.classList.add('active');
+        hostPage.classList.remove('active');
+        initViewer();
+    }
+}
+
+/**
+ * Initialize Host
+ */
+function initHost() {
+    signaling = new SignalingClient();
+    
+    signaling.onOpen = () => {
+        signaling.send({ type: 'create-room' });
+    };
+
+    webrtc = new WebRTCManager(signaling);
+    setupWebRTCCallbacks();
+
+    signaling.onMessage = handleSignalingMessage;
+    signaling.connect();
+}
+
+/**
+ * Initialize Viewer
+ */
+function initViewer() {
+    signaling = new SignalingClient();
+    webrtc = new WebRTCManager(signaling);
+    setupWebRTCCallbacks();
+    signaling.onMessage = handleSignalingMessage;
+    signaling.connect();
+}
 
 /**
  * Signaling Client
@@ -71,7 +117,6 @@ class SignalingClient {
                 console.log('WebSocket closed:', event.code, event.reason);
                 if (this.onClose) this.onClose();
                 
-                // Attempt reconnection
                 if (this.reconnectAttempts < this.maxReconnectAttempts) {
                     this.reconnectAttempts++;
                     console.log(`Reconnecting... Attempt ${this.reconnectAttempts}`);
@@ -104,76 +149,6 @@ class SignalingClient {
 }
 
 /**
- * Page Navigation
- */
-function selectRole(role) {
-    currentRole = role;
-    
-    // Initialize signaling
-    signaling = new SignalingClient();
-    
-    signaling.onOpen = () => {
-        if (role === 'host') {
-            signaling.send({ type: 'create-room' });
-        }
-    };
-
-    // Initialize WebRTC
-    webrtc = new WebRTCManager(signaling);
-    setupWebRTCCallbacks();
-
-    signaling.onMessage = handleSignalingMessage;
-    signaling.connect();
-
-    // Show appropriate page
-    landingPage.classList.remove('active');
-    if (role === 'host') {
-        hostPage.classList.add('active');
-    } else {
-        viewerPage.classList.add('active');
-    }
-}
-
-function goBack() {
-    // Cleanup
-    if (webrtc) {
-        webrtc.stopAllConnections();
-    }
-    if (signaling) {
-        signaling.disconnect();
-    }
-    if (statsInterval) {
-        clearInterval(statsInterval);
-    }
-
-    // Reset state
-    currentRole = null;
-    roomId = null;
-    signaling = null;
-    webrtc = null;
-    
-    // Reset UI
-    hostPage.classList.remove('active');
-    viewerPage.classList.remove('active');
-    landingPage.classList.add('active');
-    
-    // Reset host page
-    hostRoomInfo.style.display = 'none';
-    previewSection.style.display = 'none';
-    startShareBtn.style.display = 'block';
-    stopShareBtn.style.display = 'none';
-    hostStats.style.display = 'none';
-    viewersList.innerHTML = '';
-    viewerCount.textContent = '0';
-    
-    // Reset viewer page
-    videoContainer.style.display = 'none';
-    waitingMessage.style.display = 'none';
-    viewerStats.style.display = 'none';
-    roomCodeInput.value = '';
-}
-
-/**
  * WebRTC Callbacks Setup
  */
 function setupWebRTCCallbacks() {
@@ -184,17 +159,11 @@ function setupWebRTCCallbacks() {
         waitingMessage.style.display = 'none';
         viewerStats.style.display = 'block';
         
-        // Check if audio track exists
         const audioTracks = stream.getAudioTracks();
         if (audioTracks.length > 0) {
             console.log('Remote audio track received:', audioTracks[0].label);
-            updateAudioStatus(true);
-        } else {
-            console.warn('No audio track in remote stream');
-            updateAudioStatus(false);
         }
         
-        // Start stats monitoring
         startStatsMonitoring('viewer');
     };
 
@@ -212,60 +181,27 @@ function setupWebRTCCallbacks() {
 
     // Handle audio capture failure (Linux/KDE issue)
     webrtc.onAudioCaptureFailed = async () => {
-        showAudioFallbackDialog();
+        showLinuxAudioModal();
     };
 }
 
 /**
- * Update audio status indicator
+ * Show Linux audio configuration modal
  */
-function updateAudioStatus(hasAudio) {
-    const audioIndicator = document.getElementById('audio-status-indicator');
-    if (audioIndicator) {
-        if (hasAudio) {
-            audioIndicator.innerHTML = '🔊 有音频';
-            audioIndicator.style.color = '#22c55e';
-        } else {
-            audioIndicator.innerHTML = '🔇 无音频';
-            audioIndicator.style.color = '#ef4444';
-        }
+function showLinuxAudioModal() {
+    const modal = document.getElementById('linux-audio-modal');
+    if (modal) {
+        modal.classList.add('show');
     }
 }
 
 /**
- * Show audio fallback dialog for Linux users
+ * Close Linux audio modal
  */
-function showAudioFallbackDialog() {
-    const modal = document.getElementById('audio-fallback-modal');
+function closeLinuxAudioModal() {
+    const modal = document.getElementById('linux-audio-modal');
     if (modal) {
-        modal.classList.add('show');
-    } else {
-        // Create modal if not exists
-        const newModal = document.createElement('div');
-        newModal.id = 'audio-fallback-modal';
-        newModal.className = 'modal show';
-        newModal.innerHTML = `
-            <div class="modal-content">
-                <h3>⚠️ 系统音频捕获失败</h3>
-                <p>您的系统可能不支持通过浏览器直接捕获系统音频。</p>
-                <p><strong>这是 Linux 系统的常见问题。</strong></p>
-                <hr>
-                <p><strong>解决方案：</strong></p>
-                <ol style="text-align: left; margin: 15px 0;">
-                    <li>使用<strong>麦克风</strong>作为音频源（点击下方按钮）</li>
-                    <li>安装 <code>xdg-desktop-portal-gtk</code> 并重启：
-                        <pre style="background: #1e1e1e; padding: 10px; border-radius: 5px; margin-top: 5px;">sudo pacman -S xdg-desktop-portal-gtk
-systemctl --user restart xdg-desktop-portal</pre>
-                    </li>
-                    <li>注销并重新登录 KDE</li>
-                </ol>
-                <div class="modal-buttons">
-                    <button onclick="useMicrophoneAudio()" class="btn btn-primary">🎤 使用麦克风</button>
-                    <button onclick="closeAudioFallbackModal()" class="btn btn-secondary">继续无音频</button>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(newModal);
+        modal.classList.remove('show');
     }
 }
 
@@ -273,23 +209,15 @@ systemctl --user restart xdg-desktop-portal</pre>
  * Use microphone as audio source
  */
 async function useMicrophoneAudio() {
-    closeAudioFallbackModal();
+    closeLinuxAudioModal();
     
     if (webrtc && webrtc.addMicrophoneAudio) {
         const success = await webrtc.addMicrophoneAudio();
         if (success) {
             showTemporaryMessage('✅ 麦克风音频已添加');
-            updateAudioStatus(true);
         } else {
             showError('无法访问麦克风，请检查权限设置');
         }
-    }
-}
-
-function closeAudioFallbackModal() {
-    const modal = document.getElementById('audio-fallback-modal');
-    if (modal) {
-        modal.classList.remove('show');
     }
 }
 
@@ -341,7 +269,6 @@ function handleSignalingMessage(data) {
 
         case 'viewer-joined':
             console.log('Viewer joined:', payload.viewerId);
-            // Host creates offer when viewer joins (if already sharing)
             if (webrtc.localStream) {
                 webrtc.createOffer(payload.viewerId);
             }
@@ -356,16 +283,14 @@ function handleSignalingMessage(data) {
 
         case 'host-disconnected':
             showError('主播已断开连接');
-            goBack();
+            window.location.href = '/';
             break;
 
         case 'offer':
-            // Viewer receives offer from host
             webrtc.handleOffer(payload.offer, payload.hostId);
             break;
 
         case 'answer':
-            // Host receives answer from viewer
             webrtc.handleAnswer(payload.answer, payload.viewerId);
             break;
 
@@ -387,12 +312,19 @@ function handleSignalingMessage(data) {
  */
 async function startSharing() {
     const shareAudio = document.getElementById('share-audio').checked;
+    const useSeparateAudio = document.getElementById('use-separate-audio')?.checked || false;
+    const selectedAudioDevice = document.getElementById('audio-device-select')?.value || '';
     const resolution = document.getElementById('resolution').value;
     const frameRate = document.getElementById('framerate').value;
     const bitrate = document.getElementById('bitrate').value;
     const codec = document.getElementById('codec').value;
-    const useSeparateAudio = document.getElementById('use-separate-audio')?.checked;
-    const audioDeviceId = document.getElementById('audio-device-select')?.value;
+
+    // Apply TURN server config if specified
+    const turnConfig = getTurnServerConfig();
+    if (turnConfig) {
+        webrtc.setCustomIceServers(turnConfig);
+        console.log('Using custom TURN/STUN server:', turnConfig.url);
+    }
 
     // Update WebRTC settings
     webrtc.setVideoSettings({
@@ -403,15 +335,46 @@ async function startSharing() {
     });
 
     try {
-        let stream;
+        // Determine audio capture mode
+        let audioStream = null;
+        let screenStream = null;
         
-        if (useSeparateAudio && shareAudio) {
-            // Use separate audio capture (for PipeWire virtual device)
-            stream = await webrtc.captureScreenWithSeparateAudio(audioDeviceId || null);
+        if (useSeparateAudio && selectedAudioDevice) {
+            // Linux/PipeWire: Separate audio capture
+            console.log('Using separate audio capture from device:', selectedAudioDevice);
+            
+            // Capture screen WITHOUT audio
+            screenStream = await webrtc.captureScreen(false);
+            
+            // Separately capture audio from selected device
+            try {
+                const audioContext = new AudioContext();
+                const source = audioContext.createMediaStreamDestination();
+                
+                // Try to get audio from the selected device
+                const audioMediaStream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        deviceId: { exact: selectedAudioDevice }
+                    }
+                });
+                
+                // Add audio track to screen stream
+                audioMediaStream.getAudioTracks().forEach(track => {
+                    screenStream.addTrack(track);
+                    console.log('Added separate audio track:', track.label);
+                });
+                
+            } catch (audioError) {
+                console.warn('Failed to capture separate audio:', audioError);
+                showLinuxAudioModal();
+            }
+            
         } else {
-            // Normal capture
-            stream = await webrtc.captureScreen(shareAudio);
+            // Normal capture (Windows/Mac or Linux without separate audio)
+            screenStream = await webrtc.captureScreen(shareAudio);
         }
+        
+        const stream = screenStream;
         
         // Show preview
         localPreview.srcObject = stream;
@@ -420,21 +383,15 @@ async function startSharing() {
         stopShareBtn.style.display = 'block';
         hostStats.style.display = 'block';
 
-        // Check audio status and update UI
+        // Check audio status
         const audioTracks = stream.getAudioTracks();
         if (audioTracks.length > 0) {
             console.log('Audio sharing active:', audioTracks[0].label);
-            updateHostAudioStatus(true, audioTracks[0].label);
-        } else if (shareAudio) {
-            updateHostAudioStatus(false, '音频捕获失败');
+        } else if (shareAudio && !useSeparateAudio) {
+            // Audio was requested but not captured - show Linux modal
+            showLinuxAudioModal();
         }
 
-        // Create offers for existing viewers
-        webrtc.peerConnections.forEach((pc, viewerId) => {
-            // Already connected viewers
-        });
-
-        // Start stats monitoring
         startStatsMonitoring('host');
 
     } catch (error) {
@@ -443,56 +400,6 @@ async function startSharing() {
             showError('屏幕共享被拒绝，请允许访问屏幕');
         } else {
             showError('无法启动屏幕共享: ' + error.message);
-        }
-    }
-}
-
-/**
- * Update host audio status display
- */
-function updateHostAudioStatus(hasAudio, label = '') {
-    const indicator = document.getElementById('host-audio-status');
-    if (indicator) {
-        if (hasAudio) {
-            indicator.innerHTML = `🔊 音频: ${label || '已连接'}`;
-            indicator.style.color = '#22c55e';
-        } else {
-            indicator.innerHTML = `🔇 音频: ${label || '无'}`;
-            indicator.style.color = '#ef4444';
-        }
-    }
-}
-
-/**
- * Load audio input devices for selection
- */
-async function loadAudioDevices() {
-    const select = document.getElementById('audio-device-select');
-    if (!select) return;
-
-    const devices = await webrtc.getAudioInputDevices();
-    
-    select.innerHTML = '<option value="">-- 选择音频设备 --</option>';
-    
-    devices.forEach(device => {
-        const option = document.createElement('option');
-        option.value = device.deviceId;
-        option.textContent = device.label || `Audio ${device.deviceId.substring(0, 8)}`;
-        select.appendChild(option);
-    });
-    
-    console.log('Loaded audio devices:', devices.length);
-}
-
-// Toggle separate audio option visibility
-function toggleSeparateAudioOption() {
-    const checkbox = document.getElementById('use-separate-audio');
-    const deviceSelect = document.getElementById('audio-device-select');
-    
-    if (checkbox && deviceSelect) {
-        deviceSelect.disabled = !checkbox.checked;
-        if (checkbox.checked) {
-            loadAudioDevices();
         }
     }
 }
@@ -539,6 +446,13 @@ function joinRoom() {
         return;
     }
 
+    // Apply TURN server config if specified
+    const turnConfig = getViewerTurnServerConfig();
+    if (turnConfig) {
+        webrtc.setCustomIceServers(turnConfig);
+        console.log('Using custom TURN/STUN server:', turnConfig.url);
+    }
+
     signaling.send({
         type: 'join-room',
         payload: { roomId: code }
@@ -576,6 +490,12 @@ function startStatsMonitoring(role) {
     }, 1000);
 }
 
+// 码率计算需要的上一次值
+let lastHostBytesSent = 0;
+let lastHostStatsTime = Date.now();
+let lastViewerBytesReceived = 0;
+let lastViewerStatsTime = Date.now();
+
 function updateHostStats(stats) {
     if (stats.video.frameWidth) {
         document.getElementById('actual-resolution').textContent = 
@@ -585,10 +505,19 @@ function updateHostStats(stats) {
         document.getElementById('actual-framerate').textContent = 
             `${stats.video.framesPerSecond} FPS`;
     }
-    if (stats.video.bytesSent) {
-        const bitrate = (stats.video.bytesSent * 8 / 1000000).toFixed(2);
-        document.getElementById('actual-bitrate').textContent = `${bitrate} Mbps`;
+    
+    // 计算实时码率 (增量码率)
+    const now = Date.now();
+    if (stats.video.bytesSent !== undefined && lastHostBytesSent > 0) {
+        const timeDiff = (now - lastHostStatsTime) / 1000;
+        const bytesDiff = stats.video.bytesSent - lastHostBytesSent;
+        if (timeDiff > 0 && bytesDiff >= 0) {
+            const bitrate = ((bytesDiff * 8) / timeDiff / 1000000).toFixed(2);
+            document.getElementById('actual-bitrate').textContent = `${bitrate} Mbps`;
+        }
     }
+    lastHostBytesSent = stats.video.bytesSent || 0;
+    lastHostStatsTime = now;
 }
 
 function updateViewerStats(stats, lastBytes, lastTime) {
@@ -601,13 +530,11 @@ function updateViewerStats(stats, lastBytes, lastTime) {
             `${stats.video.framesPerSecond} FPS`;
     }
     
-    // Calculate latency
     if (stats.connection.currentRoundTripTime) {
         const latency = (stats.connection.currentRoundTripTime * 1000).toFixed(0);
         document.getElementById('viewer-latency').textContent = `${latency} ms`;
     }
     
-    // Calculate bitrate
     const now = Date.now();
     const timeDiff = (now - lastTime) / 1000;
     if (timeDiff > 0 && lastBytes > 0) {
@@ -645,11 +572,65 @@ async function togglePiP() {
 }
 
 /**
+ * TURN Server Config Functions
+ */
+function toggleTurnServerConfig() {
+    const checkbox = document.getElementById('use-turn-server');
+    const config = document.getElementById('turn-server-config');
+    
+    if (checkbox && config) {
+        config.style.display = checkbox.checked ? 'block' : 'none';
+        
+        if (!checkbox.checked && webrtc) {
+            webrtc.setCustomIceServers(null);
+        }
+    }
+}
+
+function toggleViewerTurnServerConfig() {
+    const checkbox = document.getElementById('viewer-use-turn-server');
+    const config = document.getElementById('viewer-turn-server-config');
+    
+    if (checkbox && config) {
+        config.style.display = checkbox.checked ? 'block' : 'none';
+        
+        if (!checkbox.checked && webrtc) {
+            webrtc.setCustomIceServers(null);
+        }
+    }
+}
+
+function getTurnServerConfig() {
+    const useTurn = document.getElementById('use-turn-server');
+    if (!useTurn || !useTurn.checked) return null;
+    
+    const url = document.getElementById('turn-server-url')?.value.trim();
+    const username = document.getElementById('turn-username')?.value.trim();
+    const credential = document.getElementById('turn-password')?.value;
+    
+    if (!url) return null;
+    
+    return { url, username, credential };
+}
+
+function getViewerTurnServerConfig() {
+    const useTurn = document.getElementById('viewer-use-turn-server');
+    if (!useTurn || !useTurn.checked) return null;
+    
+    const url = document.getElementById('viewer-turn-server-url')?.value.trim();
+    const username = document.getElementById('viewer-turn-username')?.value.trim();
+    const credential = document.getElementById('viewer-turn-password')?.value;
+    
+    if (!url) return null;
+    
+    return { url, username, credential };
+}
+
+/**
  * Utility Functions
  */
 function copyRoomCode() {
     navigator.clipboard.writeText(roomId).then(() => {
-        // Show feedback
         const btn = document.querySelector('.copy-btn');
         const originalText = btn.textContent;
         btn.textContent = '已复制!';
@@ -679,12 +660,118 @@ document.getElementById('volume-slider').addEventListener('input', (e) => {
     remoteVideo.volume = e.target.value / 100;
 });
 
-// Handle Enter key for room code input
 roomCodeInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
         joinRoom();
     }
 });
+
+/**
+ * Linux Separate Audio Capture Functions
+ */
+async function enumerateAudioDevices() {
+    try {
+        // Request permission first
+        await navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+            stream.getTracks().forEach(track => track.stop());
+        });
+        
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const audioSelect = document.getElementById('audio-device-select');
+        
+        if (!audioSelect) return;
+        
+        // Clear existing options
+        audioSelect.innerHTML = '';
+        
+        // Filter audio output devices (speakers/monitors)
+        const audioOutputs = devices.filter(d => d.kind === 'audiooutput');
+        const audioInputs = devices.filter(d => d.kind === 'audioinput');
+        
+        // Add monitor/virtual devices first (for Linux PipeWire)
+        const monitorDevices = audioOutputs.filter(d => 
+            d.label.toLowerCase().includes('monitor') || 
+            d.label.toLowerCase().includes('screen2gether') ||
+            d.label.toLowerCase().includes('virtual')
+        );
+        
+        if (monitorDevices.length > 0) {
+            const group = document.createElement('optgroup');
+            group.label = '📊 虚拟/监视器设备';
+            monitorDevices.forEach(device => {
+                const option = document.createElement('option');
+                option.value = device.deviceId;
+                option.textContent = device.label || `Monitor ${device.deviceId.slice(0, 8)}`;
+                group.appendChild(option);
+            });
+            audioSelect.appendChild(group);
+        }
+        
+        // Add other audio outputs
+        const otherOutputs = audioOutputs.filter(d => 
+            !d.label.toLowerCase().includes('monitor') && 
+            !d.label.toLowerCase().includes('screen2gether') &&
+            !d.label.toLowerCase().includes('virtual')
+        );
+        if (otherOutputs.length > 0) {
+            const group = document.createElement('optgroup');
+            group.label = '🔊 音频输出';
+            otherOutputs.forEach(device => {
+                const option = document.createElement('option');
+                option.value = device.deviceId;
+                option.textContent = device.label || `Speaker ${device.deviceId.slice(0, 8)}`;
+                group.appendChild(option);
+            });
+            audioSelect.appendChild(group);
+        }
+        
+        // Add audio inputs (microphones)
+        if (audioInputs.length > 0) {
+            const group = document.createElement('optgroup');
+            group.label = '🎤 麦克风';
+            audioInputs.forEach(device => {
+                const option = document.createElement('option');
+                option.value = device.deviceId;
+                option.textContent = device.label || `Mic ${device.deviceId.slice(0, 8)}`;
+                group.appendChild(option);
+            });
+            audioSelect.appendChild(group);
+        }
+        
+        if (audioSelect.options.length === 0) {
+            const option = document.createElement('option');
+            option.value = '';
+            option.textContent = '-- 未检测到音频设备 --';
+            audioSelect.appendChild(option);
+        }
+        
+        console.log(`Enumerated ${audioOutputs.length} audio outputs, ${audioInputs.length} audio inputs`);
+        
+    } catch (error) {
+        console.error('Error enumerating audio devices:', error);
+        const audioSelect = document.getElementById('audio-device-select');
+        if (audioSelect) {
+            audioSelect.innerHTML = '<option value="">-- 无法获取设备列表 --</option>';
+        }
+    }
+}
+
+function toggleSeparateAudioOption() {
+    const checkbox = document.getElementById('use-separate-audio');
+    const audioSelect = document.getElementById('audio-device-select');
+    
+    if (checkbox && audioSelect) {
+        audioSelect.disabled = !checkbox.checked;
+        
+        if (checkbox.checked) {
+            // Enumerate devices when enabled
+            enumerateAudioDevices();
+        }
+    }
+}
+
+// Initialize app on load
+initApp();
 
 // Log browser support
 console.log('WebRTC Support:', {

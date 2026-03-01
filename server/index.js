@@ -11,6 +11,11 @@ const wss = new WebSocket.Server({ server });
 // Serve static files
 app.use(express.static(path.join(__dirname, '../public')));
 
+// Host page route
+app.get('/host', (req, res) => {
+    res.sendFile(path.join(__dirname, '../public/index.html'));
+});
+
 // Store rooms and their participants
 const rooms = new Map();
 
