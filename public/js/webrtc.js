@@ -583,8 +583,7 @@ class WebRTCManager {
                 connection: {}
             };
 
-            let videoTrackId = null;
-            let remoteVideoTrackId = null;
+            let inboundVideoTrackId = null;
 
             stats.forEach(report => {
                 // 出站视频 (主播端)
@@ -593,7 +592,6 @@ class WebRTCManager {
                     result.video.packetsSent = report.packetsSent;
                     result.video.framesEncoded = report.framesEncoded;
                     result.video.framesSent = report.framesSent;
-                    videoTrackId = report.trackId;
                 }
                 // 入站视频 (观众端)
                 else if (report.type === 'inbound-rtp' && report.kind === 'video') {
@@ -603,7 +601,10 @@ class WebRTCManager {
                     result.video.framesDecoded = report.framesDecoded;
                     result.video.framesReceived = report.framesReceived;
                     result.video.jitter = report.jitter;
-                    remoteVideoTrackId = report.trackId;
+                    // 获取关联的 track ID
+                    if (report.trackId) {
+                        inboundVideoTrackId = report.trackId;
+                    }
                 }
                 // 候选对连接信息
                 else if (report.type === 'candidate-pair' && report.state === 'succeeded') {
@@ -616,13 +617,34 @@ class WebRTCManager {
                     result.video.frameHeight = report.height;
                     result.video.framesPerSecond = report.framesPerSecond;
                 }
-                // 远程视频轨道信息 (观众端分辨率/帧率)
-                else if (report.type === 'track' && report.kind === 'video' && report.remoteSource) {
-                    result.video.frameWidth = report.frameWidth;
-                    result.video.frameHeight = report.frameHeight;
-                    result.video.framesPerSecond = report.framesPerSecond;
-                }
             });
+
+            // 观众端：通过 inbound-rtp 的 trackId 找到对应的 track report
+            if (inboundVideoTrackId) {
+                stats.forEach(report => {
+                    if (report.type === 'track' && report.id === inboundVideoTrackId) {
+                        result.video.frameWidth = report.frameWidth;
+                        result.video.frameHeight = report.frameHeight;
+                        // framesPerSecond 可能在不同浏览器中字段名不同
+                        result.video.framesPerSecond = report.framesPerSecond 
+                            || report.frameRate 
+                            || (report.frameWidth ? 60 : undefined);
+                    }
+                });
+            }
+
+            // 备用：如果没有找到 track，尝试从 inbound-rtp 直接获取（某些浏览器支持）
+            if (!result.video.frameWidth) {
+                stats.forEach(report => {
+                    if (report.type === 'inbound-rtp' && report.kind === 'video') {
+                        // 某些浏览器在 inbound-rtp 中直接包含分辨率信息
+                        if (report.frameWidth) {
+                            result.video.frameWidth = report.frameWidth;
+                            result.video.frameHeight = report.frameHeight;
+                        }
+                    }
+                });
+            }
 
             return result;
         } catch (error) {
