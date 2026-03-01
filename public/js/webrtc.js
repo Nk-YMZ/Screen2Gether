@@ -10,13 +10,14 @@ class WebRTCManager {
         this.peerConnections = new Map(); // viewerId -> RTCPeerConnection
         this.remoteStreams = new Map(); // viewerId -> MediaStream
         
-        // Default ICE servers (Google STUN)
+        // Default ICE servers (国内可访问的 STUN 服务器)
         this.defaultIceServers = [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' },
-            { urls: 'stun:stun2.l.google.com:19302' },
-            { urls: 'stun:stun3.l.google.com:19302' },
-            { urls: 'stun:stun4.l.google.com:19302' }
+            { urls: 'stun:stun.miwifi.com:3478' },           // 小米
+            { urls: 'stun:stun.chat.bilibili.com:3478' },   // B站
+            { urls: 'stun:stun.hitv.com:3478' },            // 芒果TV
+            { urls: 'stun:stun.syncthing.net:3478' },      // Syncthing
+            { urls: 'stun:stun.l.google.com:19302' },       // Google (备用)
+            { urls: 'stun:stun1.l.google.com:19302' }       // Google (备用)
         ];
         
         // Custom TURN/STUN servers (set by user)
