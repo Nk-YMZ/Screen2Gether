@@ -490,6 +490,12 @@ function startStatsMonitoring(role) {
     }, 1000);
 }
 
+// 码率计算需要的上一次值
+let lastHostBytesSent = 0;
+let lastHostStatsTime = Date.now();
+let lastViewerBytesReceived = 0;
+let lastViewerStatsTime = Date.now();
+
 function updateHostStats(stats) {
     if (stats.video.frameWidth) {
         document.getElementById('actual-resolution').textContent = 
@@ -499,10 +505,19 @@ function updateHostStats(stats) {
         document.getElementById('actual-framerate').textContent = 
             `${stats.video.framesPerSecond} FPS`;
     }
-    if (stats.video.bytesSent) {
-        const bitrate = (stats.video.bytesSent * 8 / 1000000).toFixed(2);
-        document.getElementById('actual-bitrate').textContent = `${bitrate} Mbps`;
+    
+    // 计算实时码率 (增量码率)
+    const now = Date.now();
+    if (stats.video.bytesSent !== undefined && lastHostBytesSent > 0) {
+        const timeDiff = (now - lastHostStatsTime) / 1000;
+        const bytesDiff = stats.video.bytesSent - lastHostBytesSent;
+        if (timeDiff > 0 && bytesDiff >= 0) {
+            const bitrate = ((bytesDiff * 8) / timeDiff / 1000000).toFixed(2);
+            document.getElementById('actual-bitrate').textContent = `${bitrate} Mbps`;
+        }
     }
+    lastHostBytesSent = stats.video.bytesSent || 0;
+    lastHostStatsTime = now;
 }
 
 function updateViewerStats(stats, lastBytes, lastTime) {

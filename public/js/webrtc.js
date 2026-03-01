@@ -583,36 +583,44 @@ class WebRTCManager {
                 connection: {}
             };
 
+            let videoTrackId = null;
+            let remoteVideoTrackId = null;
+
             stats.forEach(report => {
+                // 出站视频 (主播端)
                 if (report.type === 'outbound-rtp' && report.kind === 'video') {
-                    result.video = {
-                        bytesSent: report.bytesSent,
-                        packetsSent: report.packetsSent,
-                        framesEncoded: report.framesEncoded,
-                        framesSent: report.framesSent,
-                        frameWidth: report.frameWidth,
-                        frameHeight: report.frameHeight,
-                        framesPerSecond: report.framesPerSecond,
-                        bitrate: report.bitrate || 0
-                    };
-                } else if (report.type === 'inbound-rtp' && report.kind === 'video') {
-                    result.video = {
-                        bytesReceived: report.bytesReceived,
-                        packetsReceived: report.packetsReceived,
-                        packetsLost: report.packetsLost,
-                        framesDecoded: report.framesDecoded,
-                        framesReceived: report.framesReceived,
-                        frameWidth: report.frameWidth,
-                        frameHeight: report.frameHeight,
-                        framesPerSecond: report.framesPerSecond,
-                        jitter: report.jitter,
-                        bitrate: report.bitrate || 0
-                    };
-                } else if (report.type === 'candidate-pair' && report.state === 'succeeded') {
-                    result.connection = {
-                        currentRoundTripTime: report.currentRoundTripTime,
-                        availableBitrate: report.availableBitrate
-                    };
+                    result.video.bytesSent = report.bytesSent;
+                    result.video.packetsSent = report.packetsSent;
+                    result.video.framesEncoded = report.framesEncoded;
+                    result.video.framesSent = report.framesSent;
+                    videoTrackId = report.trackId;
+                }
+                // 入站视频 (观众端)
+                else if (report.type === 'inbound-rtp' && report.kind === 'video') {
+                    result.video.bytesReceived = report.bytesReceived;
+                    result.video.packetsReceived = report.packetsReceived;
+                    result.video.packetsLost = report.packetsLost;
+                    result.video.framesDecoded = report.framesDecoded;
+                    result.video.framesReceived = report.framesReceived;
+                    result.video.jitter = report.jitter;
+                    remoteVideoTrackId = report.trackId;
+                }
+                // 候选对连接信息
+                else if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+                    result.connection.currentRoundTripTime = report.currentRoundTripTime;
+                    result.connection.availableBitrate = report.availableBitrate;
+                }
+                // 本地视频轨道信息 (主播端分辨率/帧率)
+                else if (report.type === 'media-source' && report.kind === 'video') {
+                    result.video.frameWidth = report.width;
+                    result.video.frameHeight = report.height;
+                    result.video.framesPerSecond = report.framesPerSecond;
+                }
+                // 远程视频轨道信息 (观众端分辨率/帧率)
+                else if (report.type === 'track' && report.kind === 'video' && report.remoteSource) {
+                    result.video.frameWidth = report.frameWidth;
+                    result.video.frameHeight = report.frameHeight;
+                    result.video.framesPerSecond = report.framesPerSecond;
                 }
             });
 
