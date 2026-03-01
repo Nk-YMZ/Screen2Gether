@@ -312,6 +312,8 @@ function handleSignalingMessage(data) {
  */
 async function startSharing() {
     const shareAudio = document.getElementById('share-audio').checked;
+    const useSeparateAudio = document.getElementById('use-separate-audio')?.checked || false;
+    const selectedAudioDevice = document.getElementById('audio-device-select')?.value || '';
     const resolution = document.getElementById('resolution').value;
     const frameRate = document.getElementById('framerate').value;
     const bitrate = document.getElementById('bitrate').value;
@@ -333,7 +335,46 @@ async function startSharing() {
     });
 
     try {
-        const stream = await webrtc.captureScreen(shareAudio);
+        // Determine audio capture mode
+        let audioStream = null;
+        let screenStream = null;
+        
+        if (useSeparateAudio && selectedAudioDevice) {
+            // Linux/PipeWire: Separate audio capture
+            console.log('Using separate audio capture from device:', selectedAudioDevice);
+            
+            // Capture screen WITHOUT audio
+            screenStream = await webrtc.captureScreen(false);
+            
+            // Separately capture audio from selected device
+            try {
+                const audioContext = new AudioContext();
+                const source = audioContext.createMediaStreamDestination();
+                
+                // Try to get audio from the selected device
+                const audioMediaStream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        deviceId: { exact: selectedAudioDevice }
+                    }
+                });
+                
+                // Add audio track to screen stream
+                audioMediaStream.getAudioTracks().forEach(track => {
+                    screenStream.addTrack(track);
+                    console.log('Added separate audio track:', track.label);
+                });
+                
+            } catch (audioError) {
+                console.warn('Failed to capture separate audio:', audioError);
+                showLinuxAudioModal();
+            }
+            
+        } else {
+            // Normal capture (Windows/Mac or Linux without separate audio)
+            screenStream = await webrtc.captureScreen(shareAudio);
+        }
+        
+        const stream = screenStream;
         
         // Show preview
         localPreview.srcObject = stream;
@@ -346,7 +387,7 @@ async function startSharing() {
         const audioTracks = stream.getAudioTracks();
         if (audioTracks.length > 0) {
             console.log('Audio sharing active:', audioTracks[0].label);
-        } else if (shareAudio) {
+        } else if (shareAudio && !useSeparateAudio) {
             // Audio was requested but not captured - show Linux modal
             showLinuxAudioModal();
         }
@@ -609,6 +650,110 @@ roomCodeInput.addEventListener('keypress', (e) => {
         joinRoom();
     }
 });
+
+/**
+ * Linux Separate Audio Capture Functions
+ */
+async function enumerateAudioDevices() {
+    try {
+        // Request permission first
+        await navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+            stream.getTracks().forEach(track => track.stop());
+        });
+        
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const audioSelect = document.getElementById('audio-device-select');
+        
+        if (!audioSelect) return;
+        
+        // Clear existing options
+        audioSelect.innerHTML = '';
+        
+        // Filter audio output devices (speakers/monitors)
+        const audioOutputs = devices.filter(d => d.kind === 'audiooutput');
+        const audioInputs = devices.filter(d => d.kind === 'audioinput');
+        
+        // Add monitor/virtual devices first (for Linux PipeWire)
+        const monitorDevices = audioOutputs.filter(d => 
+            d.label.toLowerCase().includes('monitor') || 
+            d.label.toLowerCase().includes('screen2gether') ||
+            d.label.toLowerCase().includes('virtual')
+        );
+        
+        if (monitorDevices.length > 0) {
+            const group = document.createElement('optgroup');
+            group.label = '📊 虚拟/监视器设备';
+            monitorDevices.forEach(device => {
+                const option = document.createElement('option');
+                option.value = device.deviceId;
+                option.textContent = device.label || `Monitor ${device.deviceId.slice(0, 8)}`;
+                group.appendChild(option);
+            });
+            audioSelect.appendChild(group);
+        }
+        
+        // Add other audio outputs
+        const otherOutputs = audioOutputs.filter(d => 
+            !d.label.toLowerCase().includes('monitor') && 
+            !d.label.toLowerCase().includes('screen2gether') &&
+            !d.label.toLowerCase().includes('virtual')
+        );
+        if (otherOutputs.length > 0) {
+            const group = document.createElement('optgroup');
+            group.label = '🔊 音频输出';
+            otherOutputs.forEach(device => {
+                const option = document.createElement('option');
+                option.value = device.deviceId;
+                option.textContent = device.label || `Speaker ${device.deviceId.slice(0, 8)}`;
+                group.appendChild(option);
+            });
+            audioSelect.appendChild(group);
+        }
+        
+        // Add audio inputs (microphones)
+        if (audioInputs.length > 0) {
+            const group = document.createElement('optgroup');
+            group.label = '🎤 麦克风';
+            audioInputs.forEach(device => {
+                const option = document.createElement('option');
+                option.value = device.deviceId;
+                option.textContent = device.label || `Mic ${device.deviceId.slice(0, 8)}`;
+                group.appendChild(option);
+            });
+            audioSelect.appendChild(group);
+        }
+        
+        if (audioSelect.options.length === 0) {
+            const option = document.createElement('option');
+            option.value = '';
+            option.textContent = '-- 未检测到音频设备 --';
+            audioSelect.appendChild(option);
+        }
+        
+        console.log(`Enumerated ${audioOutputs.length} audio outputs, ${audioInputs.length} audio inputs`);
+        
+    } catch (error) {
+        console.error('Error enumerating audio devices:', error);
+        const audioSelect = document.getElementById('audio-device-select');
+        if (audioSelect) {
+            audioSelect.innerHTML = '<option value="">-- 无法获取设备列表 --</option>';
+        }
+    }
+}
+
+function toggleSeparateAudioOption() {
+    const checkbox = document.getElementById('use-separate-audio');
+    const audioSelect = document.getElementById('audio-device-select');
+    
+    if (checkbox && audioSelect) {
+        audioSelect.disabled = !checkbox.checked;
+        
+        if (checkbox.checked) {
+            // Enumerate devices when enabled
+            enumerateAudioDevices();
+        }
+    }
+}
 
 // Initialize app on load
 initApp();

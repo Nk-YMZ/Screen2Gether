@@ -32,8 +32,22 @@
                         <span>共享系统音频</span>
                     </label>
                     <p style="font-size: 12px; color: #888; margin-top: 5px;">
-                        Windows: 原生支持 | Mac: 仅麦克风 | Linux: 需要配置
+                        Windows: 原生支持 | Mac: 仅麦克风 | Linux: 见下方选项
                     </p>
+                </div>
+
+                <div class="setting-group" id="linux-audio-options" style="background: #2a2a3e; padding: 12px; border-radius: 8px;">
+                    <label style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                        <input type="checkbox" id="use-separate-audio" onchange="toggleSeparateAudioOption()">
+                        <span>🐧 使用分离音频捕获 (Linux/PipeWire)</span>
+                    </label>
+                    <p style="font-size: 12px; color: #888; margin-bottom: 10px;">
+                        Linux 用户：先运行 <code style="background: #1e1e2e; padding: 2px 6px; border-radius: 4px;">./run.sh</code> 配置虚拟音频设备，
+                        然后勾选此项并选择 <strong>Monitor of Screen2Gether</strong>
+                    </p>
+                    <select id="audio-device-select" disabled style="width: 100%; padding: 8px; background: #1e1e2e; color: white; border: 1px solid #444; border-radius: 4px;">
+                        <option value="">-- 先运行 ./run.sh --</option>
+                    </select>
                 </div>
 
                 <div class="setting-group">
