@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Screen2Gether - 高清屏幕共享</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🖥️ Screen2Gether</h1>
+            <p class="subtitle">1080P@60fps 高清屏幕共享</p>
+        </header>
+
+        <!-- 主页面 - 选择角色 -->
+        <div id="landing-page" class="page active">
+            <div class="role-selection">
+                <div class="role-card" onclick="selectRole('host')">
+                    <div class="role-icon">📺</div>
+                    <h2>共享屏幕</h2>
+                    <p>将你的屏幕共享给其他人观看</p>
+                </div>
+                <div class="role-card" onclick="selectRole('viewer')">
+                    <div class="role-icon">👀</div>
+                    <h2>观看屏幕</h2>
+                    <p>观看其他人共享的屏幕</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 主播页面 -->
+        <div id="host-page" class="page">
+            <div class="back-btn" onclick="goBack()">← 返回</div>
+            <h2>共享你的屏幕</h2>
+            
+            <div class="room-info" id="host-room-info" style="display: none;">
+                <p>房间号: <span class="room-code" id="room-code-display"></span></p>
+                <button class="copy-btn" onclick="copyRoomCode()">复制房间号</button>
+            </div>
+
+            <div class="settings-panel">
+                <h3>屏幕共享设置</h3>
+                
+                <div class="setting-group">
+                    <label>
+                        <input type="checkbox" id="share-audio" checked>
+                        <span>共享系统音频</span>
+                    </label>
+                </div>
+
+                <div class="setting-group">
+                    <label for="resolution">分辨率</label>
+                    <select id="resolution">
+                        <option value="1920x1080" selected>1920 x 1080 (Full HD)</option>
+                        <option value="2560x1440">2560 x 1440 (2K)</option>
+                        <option value="3840x2160">3840 x 2160 (4K)</option>
+                        <option value="1280x720">1280 x 720 (HD)</option>
+                    </select>
+                </div>
+
+                <div class="setting-group">
+                    <label for="framerate">帧率</label>
+                    <select id="framerate">
+                        <option value="60" selected>60 FPS</option>
+                        <option value="30">30 FPS</option>
+                        <option value="24">24 FPS</option>
+                    </select>
+                </div>
+
+                <div class="setting-group">
+                    <label for="bitrate">视频码率 (Mbps)</label>
+                    <input type="range" id="bitrate" min="2" max="50" value="15">
+                    <span id="bitrate-value">15 Mbps</span>
+                </div>
+
+                <div class="setting-group">
+                    <label for="codec">视频编码</label>
+                    <select id="codec">
+                        <option value="vp9">VP9 (推荐)</option>
+                        <option value="vp8">VP8</option>
+                        <option value="h264">H.264</option>
+                    </select>
+                </div>
+            </div>
+
+            <button class="primary-btn" id="start-share-btn" onclick="startSharing()">
+                开始共享
+            </button>
+            <button class="danger-btn" id="stop-share-btn" onclick="stopSharing()" style="display: none;">
+                停止共享
+            </button>
+
+            <div class="preview-section" id="preview-section" style="display: none;">
+                <h3>预览</h3>
+                <video id="local-preview" autoplay muted playsinline></video>
+            </div>
+
+            <div class="viewers-section">
+                <h3>观看者 (<span id="viewer-count">0</span>)</h3>
+                <ul id="viewers-list"></ul>
+            </div>
+
+            <div class="stats-panel" id="host-stats" style="display: none;">
+                <h3>连接状态</h3>
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <span class="stat-label">状态</span>
+                        <span class="stat-value" id="connection-status">已连接</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">分辨率</span>
+                        <span class="stat-value" id="actual-resolution">-</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">帧率</span>
+                        <span class="stat-value" id="actual-framerate">-</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">码率</span>
+                        <span class="stat-value" id="actual-bitrate">-</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 观看者页面 -->
+        <div id="viewer-page" class="page">
+            <div class="back-btn" onclick="goBack()">← 返回</div>
+            <h2>观看屏幕共享</h2>
+
+            <div class="join-form">
+                <input type="text" id="room-code-input" placeholder="输入房间号" maxlength="6">
+                <button class="primary-btn" onclick="joinRoom()">加入房间</button>
+            </div>
+
+            <div class="video-container" id="video-container" style="display: none;">
+                <video id="remote-video" autoplay playsinline></video>
+                
+                <div class="video-controls">
+                    <button class="control-btn" onclick="toggleFullscreen()">
+                        ⛶ 全屏
+                    </button>
+                    <button class="control-btn" onclick="togglePiP()">
+                        📐 画中画
+                    </button>
+                    <div class="volume-control">
+                        <span>🔊</span>
+                        <input type="range" id="volume-slider" min="0" max="100" value="100">
+                    </div>
+                </div>
+            </div>
+
+            <div class="waiting-message" id="waiting-message" style="display: none;">
+                <div class="spinner"></div>
+                <p>等待主播开始共享...</p>
+            </div>
+
+            <div class="stats-panel" id="viewer-stats" style="display: none;">
+                <h3>接收状态</h3>
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <span class="stat-label">状态</span>
+                        <span class="stat-value" id="viewer-connection-status">连接中...</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">分辨率</span>
+                        <span class="stat-value" id="viewer-resolution">-</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">帧率</span>
+                        <span class="stat-value" id="viewer-framerate">-</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">延迟</span>
+                        <span class="stat-value" id="viewer-latency">-</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">接收码率</span>
+                        <span class="stat-value" id="viewer-bitrate">-</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="error-modal" class="modal">
+            <div class="modal-content">
+                <h3>❌ 错误</h3>
+                <p id="error-message"></p>
+                <button class="primary-btn" onclick="closeErrorModal()">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/webrtc.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html>
