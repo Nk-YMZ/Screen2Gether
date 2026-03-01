@@ -49,6 +49,20 @@
                     </label>
                 </div>
 
+                <div class="setting-group" style="background: #2a2a3e; padding: 12px; border-radius: 8px; margin-top: 10px;">
+                    <label style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                        <input type="checkbox" id="use-separate-audio" onchange="toggleSeparateAudioOption()">
+                        <span>🔧 使用分离音频捕获 (Linux/PipeWire)</span>
+                    </label>
+                    <p style="font-size: 12px; color: #888; margin-bottom: 10px;">
+                        勾选此项将分别捕获屏幕和音频，适用于 Linux 系统音频捕获失败的情况。
+                        需要先配置 PipeWire 虚拟音频设备。
+                    </p>
+                    <select id="audio-device-select" disabled style="width: 100%; padding: 8px; background: #1e1e2e; color: white; border: 1px solid #444; border-radius: 4px;">
+                        <option value="">-- 先勾选上方选项 --</option>
+                    </select>
+                </div>
+
                 <div class="setting-group">
                     <label for="resolution">分辨率</label>
                     <select id="resolution">

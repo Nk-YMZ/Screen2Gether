@@ -90,9 +90,11 @@ function handleCreateRoom(ws) {
 }
 
 function handleJoinRoom(ws, roomId) {
+    console.log(`Join room request: ${roomId}, available rooms: [${Array.from(rooms.keys()).join(', ')}]`);
     const room = rooms.get(roomId);
     
     if (!room) {
+        console.log(`Room not found: ${roomId}`);
         ws.send(JSON.stringify({
             type: 'error',
             payload: { message: 'Room not found' }

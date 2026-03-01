@@ -184,6 +184,16 @@ function setupWebRTCCallbacks() {
         waitingMessage.style.display = 'none';
         viewerStats.style.display = 'block';
         
+        // Check if audio track exists
+        const audioTracks = stream.getAudioTracks();
+        if (audioTracks.length > 0) {
+            console.log('Remote audio track received:', audioTracks[0].label);
+            updateAudioStatus(true);
+        } else {
+            console.warn('No audio track in remote stream');
+            updateAudioStatus(false);
+        }
+        
         // Start stats monitoring
         startStatsMonitoring('viewer');
     };
@@ -199,6 +209,114 @@ function setupWebRTCCallbacks() {
                 state === 'connected' ? '已连接' : state;
         }
     };
+
+    // Handle audio capture failure (Linux/KDE issue)
+    webrtc.onAudioCaptureFailed = async () => {
+        showAudioFallbackDialog();
+    };
+}
+
+/**
+ * Update audio status indicator
+ */
+function updateAudioStatus(hasAudio) {
+    const audioIndicator = document.getElementById('audio-status-indicator');
+    if (audioIndicator) {
+        if (hasAudio) {
+            audioIndicator.innerHTML = '🔊 有音频';
+            audioIndicator.style.color = '#22c55e';
+        } else {
+            audioIndicator.innerHTML = '🔇 无音频';
+            audioIndicator.style.color = '#ef4444';
+        }
+    }
+}
+
+/**
+ * Show audio fallback dialog for Linux users
+ */
+function showAudioFallbackDialog() {
+    const modal = document.getElementById('audio-fallback-modal');
+    if (modal) {
+        modal.classList.add('show');
+    } else {
+        // Create modal if not exists
+        const newModal = document.createElement('div');
+        newModal.id = 'audio-fallback-modal';
+        newModal.className = 'modal show';
+        newModal.innerHTML = `
+            <div class="modal-content">
+                <h3>⚠️ 系统音频捕获失败</h3>
+                <p>您的系统可能不支持通过浏览器直接捕获系统音频。</p>
+                <p><strong>这是 Linux 系统的常见问题。</strong></p>
+                <hr>
+                <p><strong>解决方案：</strong></p>
+                <ol style="text-align: left; margin: 15px 0;">
+                    <li>使用<strong>麦克风</strong>作为音频源（点击下方按钮）</li>
+                    <li>安装 <code>xdg-desktop-portal-gtk</code> 并重启：
+                        <pre style="background: #1e1e1e; padding: 10px; border-radius: 5px; margin-top: 5px;">sudo pacman -S xdg-desktop-portal-gtk
+systemctl --user restart xdg-desktop-portal</pre>
+                    </li>
+                    <li>注销并重新登录 KDE</li>
+                </ol>
+                <div class="modal-buttons">
+                    <button onclick="useMicrophoneAudio()" class="btn btn-primary">🎤 使用麦克风</button>
+                    <button onclick="closeAudioFallbackModal()" class="btn btn-secondary">继续无音频</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(newModal);
+    }
+}
+
+/**
+ * Use microphone as audio source
+ */
+async function useMicrophoneAudio() {
+    closeAudioFallbackModal();
+    
+    if (webrtc && webrtc.addMicrophoneAudio) {
+        const success = await webrtc.addMicrophoneAudio();
+        if (success) {
+            showTemporaryMessage('✅ 麦克风音频已添加');
+            updateAudioStatus(true);
+        } else {
+            showError('无法访问麦克风，请检查权限设置');
+        }
+    }
+}
+
+function closeAudioFallbackModal() {
+    const modal = document.getElementById('audio-fallback-modal');
+    if (modal) {
+        modal.classList.remove('show');
+    }
+}
+
+/**
+ * Show temporary message
+ */
+function showTemporaryMessage(message, duration = 3000) {
+    const toast = document.createElement('div');
+    toast.className = 'toast-message';
+    toast.textContent = message;
+    toast.style.cssText = `
+        position: fixed;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: #22c55e;
+        color: white;
+        padding: 12px 24px;
+        border-radius: 8px;
+        z-index: 10000;
+        font-weight: 500;
+    `;
+    document.body.appendChild(toast);
+    
+    setTimeout(() => {
+        toast.remove();
+    }, duration);
 }
 
 /**
@@ -273,6 +391,8 @@ async function startSharing() {
     const frameRate = document.getElementById('framerate').value;
     const bitrate = document.getElementById('bitrate').value;
     const codec = document.getElementById('codec').value;
+    const useSeparateAudio = document.getElementById('use-separate-audio')?.checked;
+    const audioDeviceId = document.getElementById('audio-device-select')?.value;
 
     // Update WebRTC settings
     webrtc.setVideoSettings({
@@ -283,7 +403,15 @@ async function startSharing() {
     });
 
     try {
-        const stream = await webrtc.captureScreen(shareAudio);
+        let stream;
+        
+        if (useSeparateAudio && shareAudio) {
+            // Use separate audio capture (for PipeWire virtual device)
+            stream = await webrtc.captureScreenWithSeparateAudio(audioDeviceId || null);
+        } else {
+            // Normal capture
+            stream = await webrtc.captureScreen(shareAudio);
+        }
         
         // Show preview
         localPreview.srcObject = stream;
@@ -291,6 +419,15 @@ async function startSharing() {
         startShareBtn.style.display = 'none';
         stopShareBtn.style.display = 'block';
         hostStats.style.display = 'block';
+
+        // Check audio status and update UI
+        const audioTracks = stream.getAudioTracks();
+        if (audioTracks.length > 0) {
+            console.log('Audio sharing active:', audioTracks[0].label);
+            updateHostAudioStatus(true, audioTracks[0].label);
+        } else if (shareAudio) {
+            updateHostAudioStatus(false, '音频捕获失败');
+        }
 
         // Create offers for existing viewers
         webrtc.peerConnections.forEach((pc, viewerId) => {
@@ -306,6 +443,56 @@ async function startSharing() {
             showError('屏幕共享被拒绝，请允许访问屏幕');
         } else {
             showError('无法启动屏幕共享: ' + error.message);
+        }
+    }
+}
+
+/**
+ * Update host audio status display
+ */
+function updateHostAudioStatus(hasAudio, label = '') {
+    const indicator = document.getElementById('host-audio-status');
+    if (indicator) {
+        if (hasAudio) {
+            indicator.innerHTML = `🔊 音频: ${label || '已连接'}`;
+            indicator.style.color = '#22c55e';
+        } else {
+            indicator.innerHTML = `🔇 音频: ${label || '无'}`;
+            indicator.style.color = '#ef4444';
+        }
+    }
+}
+
+/**
+ * Load audio input devices for selection
+ */
+async function loadAudioDevices() {
+    const select = document.getElementById('audio-device-select');
+    if (!select) return;
+
+    const devices = await webrtc.getAudioInputDevices();
+    
+    select.innerHTML = '<option value="">-- 选择音频设备 --</option>';
+    
+    devices.forEach(device => {
+        const option = document.createElement('option');
+        option.value = device.deviceId;
+        option.textContent = device.label || `Audio ${device.deviceId.substring(0, 8)}`;
+        select.appendChild(option);
+    });
+    
+    console.log('Loaded audio devices:', devices.length);
+}
+
+// Toggle separate audio option visibility
+function toggleSeparateAudioOption() {
+    const checkbox = document.getElementById('use-separate-audio');
+    const deviceSelect = document.getElementById('audio-device-select');
+    
+    if (checkbox && deviceSelect) {
+        deviceSelect.disabled = !checkbox.checked;
+        if (checkbox.checked) {
+            loadAudioDevices();
         }
     }
 }

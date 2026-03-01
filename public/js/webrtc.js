@@ -88,6 +88,25 @@ class WebRTCManager {
                 console.log('Screen capture settings:', settings);
             }
 
+            // Check if audio track was actually captured
+            const audioTracks = this.localStream.getAudioTracks();
+            console.log('Audio tracks captured:', audioTracks.length);
+            
+            if (shareAudio && audioTracks.length === 0) {
+                console.warn('Audio was requested but no audio track was captured');
+                console.warn('This is a known issue on Linux with some desktop environments');
+                console.warn('The system audio sharing dialog may not have appeared');
+                
+                // Notify via callback if available
+                if (this.onAudioCaptureFailed) {
+                    this.onAudioCaptureFailed();
+                }
+            } else if (audioTracks.length > 0) {
+                audioTracks.forEach((track, index) => {
+                    console.log(`Audio track ${index}:`, track.label, track.getSettings());
+                });
+            }
+
             // Handle stream end (user clicked stop sharing)
             this.localStream.getVideoTracks()[0].onended = () => {
                 console.log('Screen sharing ended by user');
@@ -102,6 +121,141 @@ class WebRTCManager {
             console.error('Error capturing screen:', error);
             throw error;
         }
+    }
+
+    /**
+     * Add microphone audio as fallback (when system audio is not available)
+     */
+    async addMicrophoneAudio() {
+        try {
+            const audioStream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true
+                },
+                video: false
+            });
+
+            const audioTrack = audioStream.getAudioTracks()[0];
+            
+            if (this.localStream && audioTrack) {
+                // Remove any existing audio tracks
+                this.localStream.getAudioTracks().forEach(track => track.stop());
+                
+                // Add microphone track
+                this.localStream.addTrack(audioTrack);
+                console.log('Microphone audio added as fallback');
+                
+                // Update all peer connections with the new audio track
+                this.peerConnections.forEach(async (pc, viewerId) => {
+                    const senders = pc.getSenders();
+                    const audioSender = senders.find(s => s.track && s.track.kind === 'audio');
+                    
+                    if (audioSender) {
+                        await audioSender.replaceTrack(audioTrack);
+                    } else {
+                        pc.addTrack(audioTrack, this.localStream);
+                    }
+                });
+                
+                return true;
+            }
+        } catch (error) {
+            console.error('Error adding microphone audio:', error);
+        }
+        return false;
+    }
+
+    /**
+     * Capture screen and audio separately, then merge them
+     * This is useful for Linux where system audio capture via getDisplayMedia may not work
+     * Use this with PipeWire virtual audio devices
+     */
+    async captureScreenWithSeparateAudio(audioDeviceId = null) {
+        try {
+            // First capture screen (without audio request to avoid dialog issues)
+            const screenConstraints = {
+                video: {
+                    cursor: 'always',
+                    displaySurface: 'monitor',
+                    logicalSurface: true,
+                    width: { ideal: this.videoSettings.resolution.width, max: 3840 },
+                    height: { ideal: this.videoSettings.resolution.height, max: 2160 },
+                    frameRate: { ideal: this.videoSettings.frameRate, max: 120 }
+                },
+                audio: false  // Don't request audio with screen capture
+            };
+
+            this.localStream = await navigator.mediaDevices.getDisplayMedia(screenConstraints);
+            console.log('Screen captured successfully');
+
+            // Now capture audio from a specific device (or default)
+            const audioConstraints = {
+                video: false,
+                audio: {
+                    deviceId: audioDeviceId ? { exact: audioDeviceId } : undefined,
+                    echoCancellation: false,
+                    noiseSuppression: false,
+                    autoGainControl: false,
+                    latency: 0
+                }
+            };
+
+            const audioStream = await navigator.mediaDevices.getUserMedia(audioConstraints);
+            const audioTracks = audioStream.getAudioTracks();
+            
+            if (audioTracks.length > 0) {
+                // Add audio tracks to the main stream
+                audioTracks.forEach(track => {
+                    this.localStream.addTrack(track);
+                    console.log('Audio track added:', track.label, track.getSettings());
+                });
+            } else {
+                console.warn('No audio tracks captured from the specified device');
+            }
+
+            // Handle stream end
+            const videoTrack = this.localStream.getVideoTracks()[0];
+            if (videoTrack) {
+                videoTrack.onended = () => {
+                    console.log('Screen sharing ended by user');
+                    this.stopAllConnections();
+                    if (this.onConnectionStateChange) {
+                        this.onConnectionStateChange('disconnected', 'Screen sharing ended');
+                    }
+                };
+            }
+
+            return this.localStream;
+        } catch (error) {
+            console.error('Error in captureScreenWithSeparateAudio:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Get list of available audio input devices
+     */
+    async getAudioInputDevices() {
+        try {
+            // Request permission first
+            await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+                .then(stream => stream.getTracks().forEach(t => t.stop()));
+            
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            return devices.filter(device => device.kind === 'audioinput');
+        } catch (error) {
+            console.error('Error getting audio devices:', error);
+            return [];
+        }
+    }
+
+    /**
+     * Check if audio is being captured
+     */
+    hasAudioTrack() {
+        return this.localStream && this.localStream.getAudioTracks().length > 0;
     }
 
     /**
