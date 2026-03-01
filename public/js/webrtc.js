@@ -10,15 +10,21 @@ class WebRTCManager {
         this.peerConnections = new Map(); // viewerId -> RTCPeerConnection
         this.remoteStreams = new Map(); // viewerId -> MediaStream
         
+        // Default ICE servers (Google STUN)
+        this.defaultIceServers = [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' },
+            { urls: 'stun:stun3.l.google.com:19302' },
+            { urls: 'stun:stun4.l.google.com:19302' }
+        ];
+        
+        // Custom TURN/STUN servers (set by user)
+        this.customIceServers = null;
+        
         // Configuration for RTCPeerConnection
         this.rtcConfig = {
-            iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' },
-                { urls: 'stun:stun2.l.google.com:19302' },
-                { urls: 'stun:stun3.l.google.com:19302' },
-                { urls: 'stun:stun4.l.google.com:19302' }
-            ],
+            iceServers: this.defaultIceServers,
             iceCandidatePoolSize: 10,
             bundlePolicy: 'max-bundle',
             rtcpMuxPolicy: 'require'
@@ -36,6 +42,49 @@ class WebRTCManager {
         this.onRemoteStream = null;
         this.onConnectionStateChange = null;
         this.onStatsUpdate = null;
+    }
+
+    /**
+     * Set custom TURN/STUN servers
+     * @param {Object} config - { url, username, credential }
+     */
+    setCustomIceServers(config) {
+        if (!config || !config.url) {
+            // Reset to default
+            this.customIceServers = null;
+            this.rtcConfig.iceServers = this.defaultIceServers;
+            console.log('Reset to default STUN servers');
+            return;
+        }
+        
+        const { url, username, credential } = config;
+        
+        // Parse URL to determine server type
+        const iceServer = { urls: url };
+        
+        // Add credentials if provided (required for TURN)
+        if (username) iceServer.username = username;
+        if (credential) iceServer.credential = credential;
+        
+        // Set custom servers (include default STUN as fallback)
+        this.customIceServers = [iceServer];
+        
+        // If it's a TURN server, also include STUN servers for efficiency
+        if (url.toLowerCase().startsWith('turn:')) {
+            this.rtcConfig.iceServers = [...this.defaultIceServers, iceServer];
+            console.log('Configured TURN server with STUN fallback:', url);
+        } else {
+            // If it's a custom STUN, use it alone
+            this.rtcConfig.iceServers = [iceServer];
+            console.log('Configured custom STUN server:', url);
+        }
+    }
+    
+    /**
+     * Get current ICE servers configuration
+     */
+    getIceServers() {
+        return this.rtcConfig.iceServers;
     }
 
     /**

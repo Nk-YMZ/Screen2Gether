@@ -13,25 +13,9 @@
             <p class="subtitle">1080P@60fps 高清屏幕共享</p>
         </header>
 
-        <!-- 主页面 - 选择角色 -->
-        <div id="landing-page" class="page active">
-            <div class="role-selection">
-                <div class="role-card" onclick="selectRole('host')">
-                    <div class="role-icon">📺</div>
-                    <h2>共享屏幕</h2>
-                    <p>将你的屏幕共享给其他人观看</p>
-                </div>
-                <div class="role-card" onclick="selectRole('viewer')">
-                    <div class="role-icon">👀</div>
-                    <h2>观看屏幕</h2>
-                    <p>观看其他人共享的屏幕</p>
-                </div>
-            </div>
-        </div>
-
-        <!-- 主播页面 -->
+        <!-- 主播页面 (通过 /host 访问) -->
         <div id="host-page" class="page">
-            <div class="back-btn" onclick="goBack()">← 返回</div>
+            <div class="back-btn" onclick="window.location.href='/'">← 返回观看页</div>
             <h2>共享你的屏幕</h2>
             
             <div class="room-info" id="host-room-info" style="display: none;">
@@ -47,20 +31,9 @@
                         <input type="checkbox" id="share-audio" checked>
                         <span>共享系统音频</span>
                     </label>
-                </div>
-
-                <div class="setting-group" style="background: #2a2a3e; padding: 12px; border-radius: 8px; margin-top: 10px;">
-                    <label style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
-                        <input type="checkbox" id="use-separate-audio" onchange="toggleSeparateAudioOption()">
-                        <span>🔧 使用分离音频捕获 (Linux/PipeWire)</span>
-                    </label>
-                    <p style="font-size: 12px; color: #888; margin-bottom: 10px;">
-                        勾选此项将分别捕获屏幕和音频，适用于 Linux 系统音频捕获失败的情况。
-                        需要先配置 PipeWire 虚拟音频设备。
+                    <p style="font-size: 12px; color: #888; margin-top: 5px;">
+                        Windows: 原生支持 | Mac: 仅麦克风 | Linux: 需要配置
                     </p>
-                    <select id="audio-device-select" disabled style="width: 100%; padding: 8px; background: #1e1e2e; color: white; border: 1px solid #444; border-radius: 4px;">
-                        <option value="">-- 先勾选上方选项 --</option>
-                    </select>
                 </div>
 
                 <div class="setting-group">
@@ -95,6 +68,31 @@
                         <option value="vp8">VP8</option>
                         <option value="h264">H.264</option>
                     </select>
+                </div>
+
+                <div class="setting-group" style="background: #2a2a3e; padding: 12px; border-radius: 8px; margin-top: 10px;">
+                    <label style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                        <input type="checkbox" id="use-turn-server" onchange="toggleTurnServerConfig()">
+                        <span>🌐 使用公网穿透服务器 (TURN)</span>
+                    </label>
+                    <p style="font-size: 12px; color: #888; margin-bottom: 10px;">
+                        跨网络连接时需要 TURN 服务器中继。内网使用可忽略此项。
+                    </p>
+                    <div id="turn-server-config" style="display: none;">
+                        <div style="margin-bottom: 8px;">
+                            <input type="text" id="turn-server-url" placeholder="turn:your-server.com:3478" 
+                                style="width: 100%; padding: 8px; background: #1e1e2e; color: white; border: 1px solid #444; border-radius: 4px;">
+                        </div>
+                        <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                            <input type="text" id="turn-username" placeholder="用户名" 
+                                style="flex: 1; padding: 8px; background: #1e1e2e; color: white; border: 1px solid #444; border-radius: 4px;">
+                            <input type="password" id="turn-password" placeholder="密码" 
+                                style="flex: 1; padding: 8px; background: #1e1e2e; color: white; border: 1px solid #444; border-radius: 4px;">
+                        </div>
+                        <p style="font-size: 11px; color: #666;">
+                            支持 TURN/STUN 协议，例如: turn:server.com:3478 或 stun:server.com:3478
+                        </p>
+                    </div>
                 </div>
             </div>
 
@@ -138,14 +136,35 @@
             </div>
         </div>
 
-        <!-- 观看者页面 -->
-        <div id="viewer-page" class="page">
-            <div class="back-btn" onclick="goBack()">← 返回</div>
+        <!-- 观看者页面 (首页) -->
+        <div id="viewer-page" class="page active">
             <h2>观看屏幕共享</h2>
 
             <div class="join-form">
                 <input type="text" id="room-code-input" placeholder="输入房间号" maxlength="6">
                 <button class="primary-btn" onclick="joinRoom()">加入房间</button>
+            </div>
+
+            <div class="setting-group" style="background: #2a2a3e; padding: 12px; border-radius: 8px; margin-top: 10px; max-width: 400px;">
+                <label style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                    <input type="checkbox" id="viewer-use-turn-server" onchange="toggleViewerTurnServerConfig()">
+                    <span>🌐 使用公网穿透服务器 (TURN)</span>
+                </label>
+                <p style="font-size: 12px; color: #888; margin-bottom: 10px;">
+                    跨网络连接时需要 TURN 服务器中继。
+                </p>
+                <div id="viewer-turn-server-config" style="display: none;">
+                    <div style="margin-bottom: 8px;">
+                        <input type="text" id="viewer-turn-server-url" placeholder="turn:your-server.com:3478" 
+                            style="width: 100%; padding: 8px; background: #1e1e2e; color: white; border: 1px solid #444; border-radius: 4px;">
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        <input type="text" id="viewer-turn-username" placeholder="用户名" 
+                            style="flex: 1; padding: 8px; background: #1e1e2e; color: white; border: 1px solid #444; border-radius: 4px;">
+                        <input type="password" id="viewer-turn-password" placeholder="密码" 
+                            style="flex: 1; padding: 8px; background: #1e1e2e; color: white; border: 1px solid #444; border-radius: 4px;">
+                    </div>
+                </div>
             </div>
 
             <div class="video-container" id="video-container" style="display: none;">
@@ -193,6 +212,41 @@
                         <span class="stat-label">接收码率</span>
                         <span class="stat-value" id="viewer-bitrate">-</span>
                     </div>
+                </div>
+            </div>
+
+            <div style="margin-top: 30px; padding: 15px; background: #2a2a3e; border-radius: 8px; max-width: 400px;">
+                <p style="font-size: 14px; color: #888;">
+                    💡 <strong>想要共享屏幕？</strong><br>
+                    在浏览器地址栏访问 <code style="background: #1e1e2e; padding: 2px 6px; border-radius: 4px; cursor: pointer;" onclick="window.location.href='/host'">/host</code> 路径
+                </p>
+            </div>
+        </div>
+
+        <!-- Linux 音频配置提示弹窗 -->
+        <div id="linux-audio-modal" class="modal">
+            <div class="modal-content" style="max-width: 500px;">
+                <h3>⚠️ Linux 系统音频捕获失败</h3>
+                <p>您的系统可能不支持通过浏览器直接捕获系统音频。</p>
+                <p style="color: #888; font-size: 14px;">这是 Linux/KDE 的常见问题。</p>
+                <hr style="border-color: #444; margin: 15px 0;">
+                
+                <p style="text-align: left;"><strong>解决方案：</strong></p>
+                <ol style="text-align: left; margin: 15px 0; padding-left: 20px; line-height: 1.8;">
+                    <li>在终端运行以下命令启动音频配置脚本：
+                        <pre style="background: #1e1e1e; padding: 10px; border-radius: 5px; margin-top: 5px; overflow-x: auto;"><code>./run.sh</code></pre>
+                    </li>
+                    <li>脚本会自动配置虚拟音频设备</li>
+                    <li>重新开始共享屏幕</li>
+                </ol>
+                
+                <p style="text-align: left; font-size: 13px; color: #888;">
+                    <strong>备选方案：</strong>使用麦克风作为音频源
+                </p>
+                
+                <div class="modal-buttons" style="margin-top: 15px;">
+                    <button onclick="useMicrophoneAudio()" class="btn btn-primary">🎤 使用麦克风</button>
+                    <button onclick="closeLinuxAudioModal()" class="btn btn-secondary">继续无音频</button>
                 </div>
             </div>
         </div>
